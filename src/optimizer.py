@@ -1,13 +1,11 @@
-from assembly import GearBox
+from src.assembly import GearBox
 from copy import deepcopy
 import numpy as np
-from tables import N_teethCataloge, diametersCatalog
-from constants import *
+from src.tables import N_teethCataloge, diametersCatalog
+from src.constants import *
 
 MUTATION_CHANCE = 0.03 
 POPULATION_SIZE = 100 
-CULL_PERCENT = 0.5 
-TOTAL_GENERATIONS = 20
 
 safe_LL = SHAFT_LENGTH * 0.33
 safe_LR = SHAFT_LENGTH * 0.33
@@ -16,7 +14,7 @@ thickest_shaft = diametersCatalog[-1]
 
 rng = np.random.default_rng()
 
-def gearBoxGeneticAlgorithm(gearBox, debug=False):
+def gearBoxGeneticAlgorithm(gearBox, generations=100, debug=False):
     
     if debug:
         print("\n--- RUNNING KNOWN PASSING SEED TO DEBUG CODE  ---")
@@ -31,6 +29,8 @@ def gearBoxGeneticAlgorithm(gearBox, debug=False):
 
     population = []
     bestScoresPerPop = []
+    previousBestWeight = 999999
+    staleGenerations = 0
     
     # create intial population
     for i in range(POPULATION_SIZE):
@@ -58,7 +58,7 @@ def gearBoxGeneticAlgorithm(gearBox, debug=False):
         population.append(indv)
         
     # while loop ideally with a last gen to new gen score change condition
-    for i in range(TOTAL_GENERATIONS):
+    for i in range(generations):
         # Express Genes and score response
         for indv in population:
             indvGearBox = indv["gearbox"]
@@ -78,8 +78,23 @@ def gearBoxGeneticAlgorithm(gearBox, debug=False):
         else:
             oldGen = population[0 : int(POPULATION_SIZE * 0.1)]
         
+        currentBestWeight = population[0]["score"]
+        
         # store best of generations weight
-        bestScoresPerPop.append(population[0]["score"])
+        bestScoresPerPop.append(currentBestWeight)
+        
+        # dynamic mutation rate
+        if currentBestWeight == previousBestWeight:
+            staleGenerations += 1
+        else:
+            staleGenerations = 0
+            
+        if staleGenerations > 20:
+            MUTATION_CHANCE = 0.25  # Spike to 25% to break the local minimum
+        else:
+            MUTATION_CHANCE = 0.03  # Back to standard
+            
+        previousBestWeight = currentBestWeight
         
         # Populate new generation with DNA of the survivors
         newGenDNA = generateDNA(oldGen, POPULATION_SIZE)
@@ -193,6 +208,7 @@ def gearBoxFitnessScore(gearBox, DNA_array, debug=False, verification=False):
     weight = gearBox.findSystemWeight()
     if debug: print(f"DEBUG: ✅ SEED SURVIVED! Weight: {weight}")
     
-    if verification: gearBox.printVerificationReport() # only for the final selected DNA
+    if verification: 
+       None
     
     return weight

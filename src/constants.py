@@ -1,10 +1,3 @@
-from enum import Enum
-
-class Axis(Enum):
-    X = 0
-    Y = 1
-    Z = 2
-
 # System Specifications
 LIFE_REQUIRED_IN = 3.6e8 # revolutions
 SYS_POWER = 21 * 745.7 # power input in watts

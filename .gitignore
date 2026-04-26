@@ -1,0 +1,15 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Environments
+venv/
+.env
+
+# vscode specifics
+.vscode/
+
+# Project Specific
+SolutionTemplate_Filled.csv
+evolution_curve.csv
+messy_school_backups/

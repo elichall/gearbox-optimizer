@@ -1,15 +1,12 @@
-from math import sqrt, tan, log, pow
+from math import sqrt, tan, log, pow, isnan
 from scipy.interpolate import RegularGridInterpolator, make_interp_spline
-from constants import *
-from tables import *
+from src.constants import *
+from src.tables import *
 import numpy as np
-
-# change to allow for initalization with only its ID then add parameters later in iteration
 
 class Bearing:
     reliability = BEARING_RELIABILITY
     Ka = SHOCK_FACTOR
-    L = STANDARD_LIFE
     angle = BEARING_ANGLE
     minWidth = MINIMUM_BEARING_WIDTH
     volPackingFactor = PACKING_FACTOR
@@ -18,7 +15,7 @@ class Bearing:
     objectType = "bearing"
     
     # no torque on a frictionless bearing
-    gravityForce = np.zeros([3]) # mass of bearing neglected
+    gravityForce = np.zeros([3])
     # no torque on a frictionless bearing
     torque = np.zeros([3]) # torque applied on shaft
     
@@ -33,6 +30,10 @@ class Bearing:
         self.id = id
         self.shaftId = shaftId
         
+        # Will hold the Imperial variables for the report
+        self.reportData = {} 
+        self.catalog_C_kN = 0
+        
         # --- Create Space in Memory ---
         # bearing state parameters
         self.bore = None
@@ -42,6 +43,7 @@ class Bearing:
         # strength and stress
         self.Kr = None
         self.Fe = None
+        self.L = None
         
         self.C = None
         
@@ -140,6 +142,7 @@ class Bearing:
         sortedMatches = matches.sort_values(by=["rank", "loadCapacityKn"], ascending=[True, True])
         
         best_row = sortedMatches.iloc[0]
+        
         series_num = str(best_row["seriesNumber"])
         
         # get prefix
@@ -157,20 +160,6 @@ class Bearing:
         constructed_basic_number = f"{prefix}{bore_code}"
         
         return constructed_basic_number
-    
-    def printVerificationReport(self):
-        print(f"\n  --- ⚙️ BEARING {self.id} (Shaft {self.shaftId}) ---")
-        if getattr(self, 'basicNumber', 'DUMMY') == "DUMMY":
-            print("      [OUT OF SCOPE - DUMMY BEARING]")
-            return
-            
-        Fr = sqrt(self.force[1]**2 + self.force[2]**2)
-        print(f"      Catalog Number:   {self.basicNumber}")
-        print(f"      Bore:             {self.bore:.1f} mm")
-        print(f"      Width:            {self.width*1000:.1f} mm")
-        print(f"      Radial Load (Fr): {Fr:.2f} N")
-        print(f"      Dynamic Load (C): {self.C/1000:.2f} kN")
-        print(f"      Mass:             {self.mass:.3f} kg")
 
 class Shaft:
     L = SHAFT_LENGTH
@@ -192,6 +181,13 @@ class Shaft:
         
         # Containers
         self.mountedObjects = []
+        self.reportData = {}
+        
+        # FOS storage for report
+        self.min_fatigueFOS = float('inf')
+        self.min_yieldFOS = float('inf')
+        self.max_bending_stress_pa = 0
+        self.max_torsion_stress_pa = 0
         
         # --- Shaft State Parameters ---
         self.diameter = None
@@ -391,6 +387,9 @@ class Shaft:
             meanStress = sqrt(3*torsionalShear**2)
             alternatingStress = maxBendingStress
             
+            self.max_bending_stress_pa = max(self.max_bending_stress_pa, maxBendingStress) # storing values for report
+            self.max_torsion_stress_pa = max(self.max_torsion_stress_pa, torsionalShear)
+            
             total_stress = meanStress + alternatingStress
             if total_stress <= 1e-9: # catch stress being 0 or close to it causing div by zero error
                 fatigueFOS = float('inf')
@@ -399,23 +398,23 @@ class Shaft:
                 fatigueFOS = ( alternatingStress / self.Sn + meanStress / self.Su )**(-1)
                 yieldFOS = self.Sy / total_stress
             
+            self.min_fatigueFOS = min(self.min_fatigueFOS, fatigueFOS) # storing values for report
+            self.min_yieldFOS = min(self.min_yieldFOS, yieldFOS)
+            
             self.FOS = min([self.FOS, fatigueFOS, yieldFOS])
             
     def findShaftStrength(self):
         d = self.diameter * 39.3701 # in inches
         # Fatigue Factors (Chap08_Lctr01 Slide 21)
         
-        # Gradient Factor
-        if d < 0.4:
-            Cg = 1
-        else:
-            Cg = 0.9
-        
-        Cr = 0.868 # hard code for 95% reliability
+        # Save factors to self for reporting
+        self.Cg = 1 if d < 0.4 else 0.9 
+        self.Cr = 0.868 # hard code for 95% reliability
+        self.Cl = 1.0 # Bending
         
         Sn_prime = 0.5 * self.Su
         
-        Sn = Sn_prime * self.Cs * Cg * Cr
+        Sn = Sn_prime * self.Cs * self.Cg * self.Cr
         return Sn
     
     def resonanceCheck(self):
@@ -529,76 +528,6 @@ class Shaft:
             
         if debug: print(f"✅ Shaft {self.id} Final Spacing Passed!")
         return True
-          
-    def printVerificationReport(self):
-        print(f"\n  --- SHAFT {self.id} ---")
-        if not self.scopeFlag:
-            print("      [OUT OF SCOPE - ASSUMED RIGID]")
-            return
-
-        print(f"      Diameter:         {self.diameter * 1000:.1f} mm")
-        print(f"      Length:           {self.L:.4f} m")
-        print(f"      Operating Speed:  {np.linalg.norm(self.speed):.2f} rad/s")
-        print(f"      Torque:           {np.linalg.norm(self.torque):.2f} Nm")
-        print(f"      Mass:             {self.mass:.3f} kg")
-
-        # Recalculate max stresses for reporting
-        internalLoads = self.findInternalLoads()
-        max_bend, max_torq = 0, 0
-        min_fatigue_fos, min_yield_fos = float('inf'), float('inf')
-
-        for extrema in internalLoads:
-            momentVec = extrema["moment"]
-            bendingMomentMag = sqrt( momentVec[1]**2 + momentVec[2]**2 )
-            maxBendingStress = bendingMomentMag * self.diameter / self.I / 2
-            
-            torque = momentVec[0]
-            torsionalShear = torque * self.diameter / self.J / 2
-
-            meanStress = sqrt(3*torsionalShear**2)
-            alternatingStress = maxBendingStress
-
-            max_bend = max(max_bend, bendingMomentMag)
-            max_torq = max(max_torq, abs(torque))
-
-            fatigue_fraction = (alternatingStress / self.Sn) + (meanStress / self.Su)
-            if fatigue_fraction > 1e-12:
-                min_fatigue_fos = min(min_fatigue_fos, fatigue_fraction**(-1))
-
-            total_stress = meanStress + alternatingStress
-            if total_stress > 1e-12:
-                min_yield_fos = min(min_yield_fos, self.Sy / total_stress)
-
-        print(f"      Max Bending Mom:  {max_bend:.2f} Nm")
-        print(f"      Max Torque:       {max_torq:.2f} Nm")
-        print(f"      Fatigue FOS:      {min_fatigue_fos:.3f}")
-        print(f"      Yield FOS:        {min_yield_fos:.3f}")
-        print(f"      Overall Min FOS:  {self.FOS:.3f}")
-
-        # Recalculate Resonance for reporting
-        deltaFunct = self.deflectionFunctions[0]
-        deltaShaft = abs(deltaFunct(self.L / 2)[1])
-        scalarShaftWeight = self.mass * G
-        innerNumSum = scalarShaftWeight * deltaShaft
-        innerDenSum = scalarShaftWeight * deltaShaft**2
-        for object in self.mountedObjects:
-            comp = object["component"]
-            if comp.objectType == "gear":
-                loc = object["location"]
-                deltaComp = abs(deltaFunct(loc)[1])
-                scalarCompWeight = comp.mass * G
-                innerNumSum += scalarCompWeight * deltaComp
-                innerDenSum += scalarCompWeight * deltaComp**2
-
-        criticalSpeed = sqrt(G * innerNumSum / innerDenSum)
-        print(f"      Critical Speed:   {criticalSpeed:.2f} rad/s")
-
-        # Bearing Deflections
-        for object in self.mountedObjects:
-            comp = object["component"]
-            if comp.objectType == "bearing":
-                ang_deg = np.linalg.norm(comp.angularDeflection) * 180 / PI
-                print(f"      Bearing {comp.id} Ang Deflection: {ang_deg:.4f}° (Limit: {BEARING_ANGULAR_DEFLECTION_LIMIT * 180 / PI:.2f}°)")
     
 class Gear:
     # givens
@@ -629,6 +558,9 @@ class Gear:
         self.Cs = self.surfaceFactorInterpolator(self.Su / 1e9)
         self.kr = self.reliabilityFactorInterpolator(self.reliability)
         self.Cg = self.gradientFactor()
+        
+        # make a container for the final report
+        self.reportData = {}
         
         # create space in memory
         # --- Gear State Parameters ---
@@ -681,7 +613,7 @@ class Gear:
         self.force = self.Ft * np.array([0, tan(self.pressureAngle), 1]) + self.gravityForce
         self.moment = self.torque
         
-    def finalize(self, debug=False):
+    def finalize(self, debug=False):  
         None
     
     def findGearStrength(self):
@@ -738,14 +670,3 @@ class Gear:
         else:
             Cg = 1
         return Cg
-    
-    def printVerificationReport(self):
-        print(f"\n  --- ⚙️ GEAR {self.id} (Meshes with Gear {self.meshingId}) ---")
-        print(f"      Teeth (N):        {self.N}")
-        print(f"      Pitch Diam (d):   {self.d * 39.3701:.2f} in ({self.d * 1000:.1f} mm)")
-        print(f"      Face Width (b):   {self.width * 39.3701:.3f} in ({self.width * 1000:.1f} mm)")
-        print(f"      Tangential (Ft):  {self.Ft:.2f} N")
-        print(f"      Geometry (J):     {self.J:.3f}")
-        print(f"      Velocity (Kv):    {self.Kv:.3f}")
-        print(f"      Strength (Sn):    {self.Sn / 1e6:.2f} MPa")
-        print(f"      Mass:             {self.mass:.3f} kg")

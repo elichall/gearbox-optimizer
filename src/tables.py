@@ -9,7 +9,7 @@ CsMachined = np.array([0.80, 0.77, 0.74, 0.70, 0.66, 0.62, 0.56, 0.51])
 diametersCatalog = np.array([17, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75]) # bores from bearings catalog
 
 # --- BEARINGS DATA ---
-# Bearing Dimensions (Chap14_Lctr01 Slide)
+# Bearing Dimensions (Chap14_Lctr01 Slide 18)
 bearingCatalog = {
     "L03": {"bore": 17, "ball": {"od": 35, "w": 10, "r": 0.30, "ds": 19.8, "dh": 32.3}, "roller": {"od": 35, "w": 10, "r": 0.64, "ds": 20.8, "dh": 32.0}},
     "203": {"bore": 17, "ball": {"od": 40, "w": 12, "r": 0.64, "ds": 22.4, "dh": 34.8}, "roller": {"od": 40, "w": 12, "r": 0.64, "ds": 20.8, "dh": 36.3}},
@@ -78,6 +78,7 @@ for bId, data in bearingCatalog.items():
     })
 dfBearings = pd.DataFrame(flatData)
 
+# (Chap14_Lctr01 Slide 21)
 bearingLoadCapacityMap = {
     10: {
         "radialBall": {"xlt_L00": 1.02, "lt_200": 1.42, "med_300": 1.90},

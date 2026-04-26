@@ -1,5 +1,5 @@
-from objects import Shaft, Gear, Bearing
-from constants import *
+from src.objects import Shaft, Gear, Bearing
+from src.constants import *
 import numpy as np
 from math import sqrt
 
@@ -145,6 +145,8 @@ class GearBox:
         self.gearContainer[2].speed = shaft01Speed
         self.gearContainer[2].torque = shaft01.torque
         self.gearContainer[2].life = shaft01.life
+        self.bearingContainer[2].L = shaft01.life
+        self.bearingContainer[3].L = shaft01.life
         
         self.gearContainer[1].speed = shaft01Speed
         self.gearContainer[1].torque = - shaft01.torque
@@ -170,6 +172,8 @@ class GearBox:
             self.gearContainer[3].speed = shaftOutSpeed
             self.gearContainer[3].torque = shaftOut.torque
             self.gearContainer[3].life = shaftOut.life
+            self.bearingContainer[4].L = shaftOut.life
+            self.bearingContainer[5].L = shaftOut.life
             return True
         else:
             if debug: print("❌ Kinematics Failed!")
@@ -221,67 +225,3 @@ class GearBox:
         for shaft in self.shaftContainer:
             # Reset the Factor of Safety
             shaft.FOS = float('inf') 
-    
-    def printVerificationReport(self):
-        print("\n" + "="*60)
-        print("⚙️ GEARBOX SYSTEM VERIFICATION REPORT")
-        print("="*60)
-        print(f"Total System Mass:   {self.findSystemWeight() / G:.2f} kg")
-        print(f"Total System Weight: {self.findSystemWeight():.2f} N")
-        print(f"Input Power:         {self.power:.2f} W")
-        print(f"Input Speed:         {np.linalg.norm(self.inputSpeed):.2f} rad/s")
-        print(f"Output Speed:        {np.linalg.norm(self.outputSpeed):.2f} rad/s")
-        print(f"Input Torque:        {np.linalg.norm(self.inputTorque):.2f} Nm")
-        print(f"Output Torque:       {np.linalg.norm(self.shaftContainer[-1].torque):.2f} Nm")
-
-        print("\n" + "-"*60)
-        print("1. SHAFT VERIFICATION")
-        print("-"*60)
-        for shaft in self.shaftContainer:
-            shaft.printVerificationReport()
-
-        print("\n" + "-"*60)
-        print("2. GEAR VERIFICATION")
-        print("-"*60)
-        for gear in self.gearContainer:
-            gear.printVerificationReport()
-
-        print("\n" + "-"*60)
-        print("3. BEARING VERIFICATION")
-        print("-"*60)
-        for bearing in self.bearingContainer:
-            bearing.printVerificationReport()
-        print("="*60 + "\n")
-    
-    def gearTrain_advanced(self): # not used because of scope creep for school project
-        # Power is conserved in this model
-        
-        n = len(self.shaftContainer)
-        sysOfEqns = np.eye(n)
-        
-        LHS = np.zeros([n])
-        
-        # linear system of equations
-        for shaft in self.shaftContainer[1:-1]:
-            if shaft.torque != None: # if this is the constrained shaft (for this system it will always be the 0 index)
-                LHS[shaft.id] = self.inputSpeed
-                continue
-            
-            shaftGears = [gear["component"] for gear in shaft.mountedObjects if gear["component"].objectType == "gear"]
-            m = len(shaftGears)
-            for gear in shaftGears:
-                interactingGearId = gear.meshingId
-                interactingGear = self.gearContainer[interactingGearId]
-                
-                interactingShaftId = interactingGear.shaftId
-                sysOfEqns[shaft.id,interactingShaftId] = 1/(m) * gear.N / interactingGear.N # multiply by rotm for the gear if bevel or whatnot
-
-        speedVec = np.linalg.inv(sysOfEqns) @ LHS
-            
-        for shaft in self.shaftContainer:
-            shaftSpeed = speedVec[shaft.id]
-            
-            speedMag = sqrt(sum(shaftSpeed**2))
-            shaft.torque = self.power * shaftSpeed * 1/speedMag**2 # reverse P = torque dot rotational_vel
-            
-    
